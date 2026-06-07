@@ -12,7 +12,7 @@ usage() {
   exit 1
 }
 
-CONCURRENCY="1,8,16,32"
+CONCURRENCY="1,8,16,32,64,128"
 TOTAL_REQUESTS=""
 MAX_TOKENS=20
 CURL_EXTRA=""
@@ -51,7 +51,7 @@ run_level() {
   local start end elapsed
   start=$(date +%s%N)
   seq "$n" | xargs -P "$c" -I{} \
-    sh -c "curl -s -o /dev/null $CURL_EXTRA -w '%{http_code} %{time_total}\n' \
+    sh -c "curl -s -o /dev/null --max-time 120 $CURL_EXTRA -w '%{http_code} %{time_total}\n' \
       -X POST \
       -H 'Content-Type: application/json' \
       -H 'Authorization: Bearer ${OPENAI_API_KEY}' \
