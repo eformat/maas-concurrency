@@ -47,7 +47,6 @@ run_level() {
   local n=$1 c=$2
   local tmpdir
   tmpdir=$(mktemp -d /tmp/bench-results.XXXXXX)
-  > "$RESULTS"
   local start end elapsed
   start=$(date +%s%N)
   seq "$n" | xargs -P "$c" -I{} \
