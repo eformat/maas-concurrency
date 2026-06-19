@@ -7,8 +7,10 @@ usage() {
   echo "  -n  Requests per concurrent slot (total = n * c, default: 1)"
   echo "  -t  Max tokens in response (default: 8)"
   echo "  -k  Allow insecure TLS (self-signed certs)"
+  echo "  -r  Reuse connections (one TLS handshake per worker)"
   echo ""
   echo "Example: $0 -c 1,4,8,16,32 -n 64 -t 20"
+  echo "Compare: $0 -n 4 && $0 -n 4 -r"
   exit 1
 }
 
@@ -16,13 +18,15 @@ CONCURRENCY="1,8,16,32,64,128"
 TOTAL_REQUESTS=""
 MAX_TOKENS=20
 CURL_EXTRA=""
+REUSE=0
 
-while getopts "c:n:t:kh" opt; do
+while getopts "c:n:t:krh" opt; do
   case $opt in
     c) CONCURRENCY="$OPTARG" ;;
     n) TOTAL_REQUESTS="$OPTARG" ;;
     t) MAX_TOKENS="$OPTARG" ;;
     k) CURL_EXTRA="-k" ;;
+    r) REUSE=1 ;;
     h) usage ;;
     *) usage ;;
   esac
@@ -49,13 +53,36 @@ run_level() {
   tmpdir=$(mktemp -d /tmp/bench-results.XXXXXX)
   local start end elapsed
   start=$(date +%s%N)
-  seq "$n" | xargs -P "$c" -I{} \
-    sh -c "curl -s -o /dev/null --max-time 120 $CURL_EXTRA -w '%{http_code} %{time_total}\n' \
-      -X POST \
-      -H 'Content-Type: application/json' \
-      -H 'Authorization: Bearer ${OPENAI_API_KEY}' \
-      -d @'$PAYLOAD' \
-      '$URL' > '$tmpdir/{}.txt' 2>/dev/null"
+
+  if ((REUSE)); then
+    local reps=$((n / c))
+    ((reps < 1)) && reps=1
+    local curl_args=()
+    for ((i=1; i<=reps; i++)); do
+      ((i > 1)) && curl_args+=(--next)
+      curl_args+=(-s -o /dev/null --max-time 120)
+      [[ -n "$CURL_EXTRA" ]] && curl_args+=("$CURL_EXTRA")
+      curl_args+=(-w '%{http_code} %{time_total}\n')
+      curl_args+=(-X POST)
+      curl_args+=(-H "Content-Type: application/json")
+      curl_args+=(-H "Authorization: Bearer ${OPENAI_API_KEY}")
+      curl_args+=(-d "@${PAYLOAD}")
+      curl_args+=("${URL}")
+    done
+    for ((w=1; w<=c; w++)); do
+      curl "${curl_args[@]}" > "$tmpdir/$w.txt" 2>/dev/null &
+    done
+    wait || true
+  else
+    seq "$n" | xargs -P "$c" -I{} \
+      sh -c "curl -s -o /dev/null --max-time 120 $CURL_EXTRA -w '%{http_code} %{time_total}\n' \
+        -X POST \
+        -H 'Content-Type: application/json' \
+        -H 'Authorization: Bearer ${OPENAI_API_KEY}' \
+        -d @'$PAYLOAD' \
+        '$URL' > '$tmpdir/{}.txt' 2>/dev/null"
+  fi
+
   cat "$tmpdir"/*.txt > "$RESULTS" 2>/dev/null
   rm -rf "$tmpdir"
   end=$(date +%s%N)
@@ -85,12 +112,16 @@ run_level() {
 IFS=',' read -ra LEVELS <<< "$CONCURRENCY"
 MULTI=${TOTAL_REQUESTS:-1}
 
+CONN_MODE="new-conn-per-request"
+((REUSE)) && CONN_MODE="keepalive (reuse TLS)"
+
 echo "=== MaaS Concurrency Bench ==="
 echo "URL:        $URL"
 echo "Model:      $OPENAI_MODEL_NAME"
 echo "Max tokens: $MAX_TOKENS"
 echo "Levels:     ${LEVELS[*]}"
 echo "Multiplier: x$MULTI per slot"
+echo "Connections: $CONN_MODE"
 echo ""
 
 for C in "${LEVELS[@]}"; do
