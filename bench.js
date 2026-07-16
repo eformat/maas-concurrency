@@ -57,6 +57,9 @@ const params = {
   timeout: '120s',
 };
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+
 export function setup() {
   console.log('=== MaaS Concurrency Bench (k6) ===');
   console.log(`URL:             ${url}`);
@@ -66,10 +69,9 @@ export function setup() {
   console.log(`Iterations/VU:   ${REQUESTS_PER_VU}`);
   console.log(`Insecure TLS:    ${INSECURE}`);
   console.log(`Connection reuse: ${!NO_KEEPALIVE}`);
+  console.log(`Max retries:      ${MAX_RETRIES}`);
+  console.log(`Retry delay:      ${RETRY_DELAY_MS}ms`);
 }
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 500;
 
 export function bench() {
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
