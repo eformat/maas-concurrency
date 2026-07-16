@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { check } from 'k6';
+import { check, sleep } from 'k6';
 
 const API_KEY    = __ENV.OPENAI_API_KEY;
 const MODEL_NAME = __ENV.OPENAI_MODEL_NAME;
@@ -9,7 +9,7 @@ if (!API_KEY)    throw new Error('Set OPENAI_API_KEY via -e');
 if (!MODEL_NAME) throw new Error('Set OPENAI_MODEL_NAME via -e');
 if (!BASE_URL)   throw new Error('Set OPENAI_BASE_URL via -e');
 
-const CONCURRENCY     = __ENV.CONCURRENCY     || '1,8,16,32,64,128';
+const CONCURRENCY     = __ENV.CONCURRENCY     || '1,8,16,32,64,128,256,512';
 const REQUESTS_PER_VU = parseInt(__ENV.REQUESTS_PER_VU || '1', 10);
 const MAX_TOKENS      = parseInt(__ENV.MAX_TOKENS      || '20', 10);
 const INSECURE        = (__ENV.INSECURE     || 'false') === 'true';
@@ -68,6 +68,9 @@ export function setup() {
   console.log(`Connection reuse: ${!NO_KEEPALIVE}`);
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+
 export function bench() {
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
   const payload = JSON.stringify({
@@ -76,7 +79,12 @@ export function bench() {
     max_tokens: MAX_TOKENS,
   });
 
-  const res = http.post(url, payload, params);
+  let res;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    res = http.post(url, payload, params);
+    if (res.status === 200 || (res.status > 0 && res.status < 500)) break;
+    if (attempt < MAX_RETRIES - 1) sleep(RETRY_DELAY_MS / 1000);
+  }
 
   check(res, {
     'status is 200': (r) => r.status === 200,
