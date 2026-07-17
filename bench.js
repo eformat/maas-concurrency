@@ -14,6 +14,7 @@ const REQUESTS_PER_VU = parseInt(__ENV.REQUESTS_PER_VU || '1', 10);
 const MAX_TOKENS      = parseInt(__ENV.MAX_TOKENS      || '20', 10);
 const INSECURE        = (__ENV.INSECURE     || 'false') === 'true';
 const NO_KEEPALIVE    = (__ENV.NO_KEEPALIVE || 'false') === 'true';
+const THINKING        = (__ENV.THINKING    || 'false') === 'true';
 
 const levels = CONCURRENCY.split(',').map(s => parseInt(s.trim(), 10));
 
@@ -69,17 +70,20 @@ export function setup() {
   console.log(`Iterations/VU:   ${REQUESTS_PER_VU}`);
   console.log(`Insecure TLS:    ${INSECURE}`);
   console.log(`Connection reuse: ${!NO_KEEPALIVE}`);
+  console.log(`Thinking:         ${THINKING}`);
   console.log(`Max retries:      ${MAX_RETRIES}`);
   console.log(`Retry delay:      ${RETRY_DELAY_MS}ms`);
 }
 
 export function bench() {
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
-  const payload = JSON.stringify({
+  const body = {
     model: MODEL_NAME,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: MAX_TOKENS,
-  });
+  };
+  body.chat_template_kwargs = { enable_thinking: THINKING };
+  const payload = JSON.stringify(body);
 
   let res;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
